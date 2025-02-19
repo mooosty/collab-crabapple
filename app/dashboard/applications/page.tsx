@@ -10,9 +10,20 @@ interface Application {
   projectId: string;
   projectName: string;
   projectImage?: string;
-  status: 'pending' | 'approved';
-  about: string;
-  collaboration: string;
+  status: 'pending' | 'approved' | 'rejected';
+  details: {
+    languages: { [key: string]: boolean };
+    niches: { [key: string]: boolean | string };
+    main_ecosystem: { [key: string]: boolean };
+    audience_type: { [key: string]: boolean | string };
+    main_socials: {
+      [key: string]: {
+        handle: string;
+        audience_count: string;
+      };
+    };
+    description: string;
+  };
   submittedAt: string;
   updatedAt: string;
 }
@@ -22,6 +33,7 @@ export default function ApplicationsPage() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchApplications = async () => {
@@ -43,6 +55,9 @@ export default function ApplicationsPage() {
 
         const data = await response.json();
         if (data.success) {
+          console.log('Raw API response:', data);
+          console.log('Applications data:', data.data);
+          console.log('First application details:', data.data[0]?.details);
           setApplications(data.data);
         } else {
           throw new Error(data.error || 'Failed to fetch applications');
@@ -57,6 +72,16 @@ export default function ApplicationsPage() {
 
     fetchApplications();
   }, [user]);
+
+  const toggleExpand = (id: string) => {
+    setExpandedId(expandedId === id ? null : id);
+    if (expandedId !== id) {
+      const application = applications.find(app => app.id === id);
+      console.log('Toggling application:', id);
+      console.log('Application found:', application);
+      console.log('Application details:', application?.details);
+    }
+  };
 
   if (loading) {
     return (
@@ -147,8 +172,8 @@ export default function ApplicationsPage() {
               )}
 
               {/* Application Details */}
-              <div className="flex-1 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
                   <div>
                     <Link
                       href={`/dashboard/projects/${application.projectId}`}
@@ -160,6 +185,8 @@ export default function ApplicationsPage() {
                       <span className={`inline-block px-3 py-1 rounded-full text-sm ${
                         application.status === 'approved'
                           ? 'bg-green-500/10 text-green-400'
+                          : application.status === 'rejected'
+                          ? 'bg-red-500/10 text-red-400'
                           : 'bg-yellow-500/10 text-yellow-400'
                       }`}>
                         {application.status.charAt(0).toUpperCase() + application.status.slice(1)}
@@ -171,16 +198,125 @@ export default function ApplicationsPage() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <div>
-                    <h3 className="text-[#f5efdb99] text-sm mb-1">About</h3>
-                    <p className="text-[#f5efdb]">{application.about}</p>
+                <button
+                  onClick={() => toggleExpand(application.id)}
+                  className="w-full text-left mb-4"
+                >
+                  <div className="flex items-center justify-between text-[#f5efdb] hover:opacity-80 transition-opacity">
+                    <span className="font-medium">
+                      {expandedId === application.id ? 'Hide Details' : 'Show Details'}
+                    </span>
+                    <svg
+                      className={`w-5 h-5 transform transition-transform ${
+                        expandedId === application.id ? 'rotate-180' : ''
+                      }`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
                   </div>
-                  <div>
-                    <h3 className="text-[#f5efdb99] text-sm mb-1">Collaboration Proposal</h3>
-                    <p className="text-[#f5efdb]">{application.collaboration}</p>
+                </button>
+
+                {expandedId === application.id && (
+                  <div className="space-y-6 mt-4 pt-4 border-t border-[#f5efdb1a]">
+                    {/* Languages */}
+                    <div>
+                      <h3 className="text-[#f5efdb99] text-sm mb-2">Languages</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {application.details?.languages && 
+                          Object.entries(application.details.languages)
+                            .filter(([_, value]) => value === true)
+                            .map(([lang]) => (
+                              <span key={lang} className="px-2 py-1 rounded-full bg-[#f5efdb1a] text-[#f5efdb] text-sm">
+                                {lang}
+                              </span>
+                            ))}
+                      </div>
+                    </div>
+
+                    {/* Niches */}
+                    <div>
+                      <h3 className="text-[#f5efdb99] text-sm mb-2">Niches</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {application.details?.niches && 
+                          Object.entries(application.details.niches)
+                            .filter(([_, value]) => value === true || typeof value === 'string')
+                            .map(([niche, value]) => (
+                              <span key={niche} className="px-2 py-1 rounded-full bg-[#f5efdb1a] text-[#f5efdb] text-sm group relative">
+                                {niche}
+                                {typeof value === 'string' && value && (
+                                  <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs bg-[#2a2a28] text-[#f5efdb] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {value}
+                                  </span>
+                                )}
+                              </span>
+                            ))}
+                      </div>
+                    </div>
+
+                    {/* Main Ecosystem */}
+                    <div>
+                      <h3 className="text-[#f5efdb99] text-sm mb-2">Main Ecosystem</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {application.details?.main_ecosystem && 
+                          Object.entries(application.details.main_ecosystem)
+                            .filter(([_, value]) => value === true)
+                            .map(([ecosystem]) => (
+                              <span key={ecosystem} className="px-2 py-1 rounded-full bg-[#f5efdb1a] text-[#f5efdb] text-sm">
+                                {ecosystem}
+                              </span>
+                            ))}
+                      </div>
+                    </div>
+
+                    {/* Audience Type */}
+                    <div>
+                      <h3 className="text-[#f5efdb99] text-sm mb-2">Audience Type</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {application.details?.audience_type && 
+                          Object.entries(application.details.audience_type)
+                            .filter(([_, value]) => value === true || typeof value === 'string')
+                            .map(([type, value]) => (
+                              <span key={type} className="px-2 py-1 rounded-full bg-[#f5efdb1a] text-[#f5efdb] text-sm group relative">
+                                {type}
+                                {typeof value === 'string' && value && (
+                                  <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs bg-[#2a2a28] text-[#f5efdb] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {value}
+                                  </span>
+                                )}
+                              </span>
+                            ))}
+                      </div>
+                    </div>
+
+                    {/* Main Socials */}
+                    <div>
+                      <h3 className="text-[#f5efdb99] text-sm mb-2">Social Media Presence</h3>
+                      <div className="grid gap-4">
+                        {application.details?.main_socials && 
+                          Object.entries(application.details.main_socials)
+                            .filter(([_, data]) => data.handle)
+                            .map(([platform, data]) => (
+                              <div key={platform} className="flex items-center justify-between bg-[#f5efdb0d] rounded-lg p-3">
+                                <div>
+                                  <span className="text-[#f5efdb] font-medium capitalize">{platform}</span>
+                                  <span className="text-[#f5efdb99] ml-2">@{data.handle}</span>
+                                </div>
+                                <span className="text-[#f5efdb99]">{data.audience_count} followers</span>
+                              </div>
+                            ))}
+                      </div>
+                    </div>
+
+                    {/* Description */}
+                    <div>
+                      <h3 className="text-[#f5efdb99] text-sm mb-2">Additional Information</h3>
+                      <p className="text-[#f5efdb] whitespace-pre-wrap">{application.details?.description || 'No additional information provided.'}</p>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>

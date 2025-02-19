@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { useDynamicContext } from '@dynamic-labs/sdk-react-core';
 import { Dialog } from '@headlessui/react';
 import Link from 'next/link';
+import AmbassadorFormPopup from '@/app/components/AmbassadorFormPopup';
 
 interface Project {
   id: string;
@@ -142,13 +143,6 @@ interface TaskSubmissionModalProps {
   onClose: () => void;
   task: TaskType;
   onTaskSubmitted: (updatedProgress: TaskProgress | null) => void;
-}
-
-interface CollaborationModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSubmit: (data: { about: string; collaboration: string }) => void;
-  submitting: boolean;
 }
 
 interface ToastProps {
@@ -361,101 +355,6 @@ const TaskSubmissionModal = ({ isOpen, onClose, task, onTaskSubmitted }: TaskSub
   );
 };
 
-const CollaborationModal = ({ isOpen, onClose, onSubmit, submitting }: CollaborationModalProps) => {
-  const [about, setAbout] = useState('');
-  const [collaboration, setCollaboration] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Trim values before validation
-    const trimmedAbout = about.trim();
-    const trimmedCollaboration = collaboration.trim();
-    
-    if (!trimmedAbout || !trimmedCollaboration) {
-      setError('Please fill in both fields');
-      return;
-    }
-
-    // Pass the trimmed values to onSubmit
-    onSubmit({
-      about: trimmedAbout,
-      collaboration: trimmedCollaboration
-    });
-  };
-
-  // Reset form when modal is closed
-  useEffect(() => {
-    if (!isOpen) {
-      setAbout('');
-      setCollaboration('');
-      setError(null);
-    }
-  }, [isOpen]);
-
-  return (
-    <Dialog open={isOpen} onClose={onClose} className="relative z-50">
-      <div className="fixed inset-0 bg-black/80" aria-hidden="true" />
-      <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="w-full max-w-2xl rounded-xl backdrop-blur-md bg-[#2a2a2833] border border-[#f5efdb1a] p-6">
-          <Dialog.Title className="text-2xl font-display text-[#f5efdb] mb-6">
-            Collaboration Request
-          </Dialog.Title>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label className="block text-[#f5efdb] text-lg mb-2">
-                Tell us about yourself
-              </label>
-              <textarea
-                value={about}
-                onChange={(e) => setAbout(e.target.value)}
-                className="w-full h-32 px-4 py-3 rounded-lg bg-[#2a2a2866] border border-[#f5efdb1a] text-[#f5efdb] placeholder-[#f5efdb66] focus:outline-none focus:border-[#f5efdb33] resize-none"
-                placeholder="I am the owner of XYZ YouTube channel with 50k subscribers, focusing on NFT and Web3 content. I have been creating content for 2 years and have collaborated with projects like ABC and DEF."
-                required
-                disabled={submitting}
-              />
-            </div>
-            <div>
-              <label className="block text-[#f5efdb] text-lg mb-2">
-                How would you like to collaborate with this project?
-              </label>
-              <textarea
-                value={collaboration}
-                onChange={(e) => setCollaboration(e.target.value)}
-                className="w-full h-32 px-4 py-3 rounded-lg bg-[#2a2a2866] border border-[#f5efdb1a] text-[#f5efdb] placeholder-[#f5efdb66] focus:outline-none focus:border-[#f5efdb33] resize-none"
-                placeholder="I can create 3 detailed videos about the project over 2 weeks (1-2 videos per week), covering topics like project overview, unique features, and mint strategy. Each video will be 10-15 minutes long with high production quality."
-                required
-                disabled={submitting}
-              />
-            </div>
-            {error && (
-              <div className="text-red-500 text-sm">{error}</div>
-            )}
-            <div className="flex justify-end gap-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-3 rounded-lg border border-[#f5efdb1a] text-[#f5efdb] hover:bg-[#f5efdb1a]"
-                disabled={submitting}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-3 rounded-lg bg-[#f5efdb] text-[#2a2a28] hover:opacity-90 disabled:opacity-50"
-                disabled={submitting}
-              >
-                {submitting ? 'Submitting...' : 'Submit Request'}
-              </button>
-            </div>
-          </form>
-        </Dialog.Panel>
-      </div>
-    </Dialog>
-  );
-};
-
 export default function ProjectDetailsPage() {
   const { user } = useDynamicContext();
   const params = useParams();
@@ -483,8 +382,8 @@ export default function ProjectDetailsPage() {
         setLoading(true);
         setError(null);
 
-        // Fetch project details, assigned tasks, and task progress in parallel
-        const [projectResponse, tasksResponse, progressResponse] = await Promise.all([
+        // Fetch project details, assigned tasks, task progress, and collaboration status in parallel
+        const [projectResponse, tasksResponse, progressResponse, collaborationResponse] = await Promise.all([
           fetch(`/api/projects/${params.projectId}`, {
             headers: {
               'Authorization': `Bearer ${user.email}`
@@ -496,6 +395,11 @@ export default function ProjectDetailsPage() {
             }
           }),
           fetch(`/api/projects/${params.projectId}/progress`, {
+            headers: {
+              'Authorization': `Bearer ${user.email}`
+            }
+          }),
+          fetch(`/api/projects/${params.projectId}/collaborate`, {
             headers: {
               'Authorization': `Bearer ${user.email}`
             }
@@ -522,6 +426,17 @@ export default function ProjectDetailsPage() {
           const progressData = await progressResponse.json();
           if (progressData.success) {
             setTaskProgress(progressData.data);
+          }
+        }
+
+        if (collaborationResponse.ok) {
+          const collaborationData = await collaborationResponse.json();
+          if (collaborationData.success && collaborationData.data) {
+            setExistingCollaboration({
+              status: collaborationData.data.status,
+              about: collaborationData.data.about || '',
+              collaboration: collaborationData.data.collaboration || ''
+            });
           }
         }
 
@@ -636,7 +551,7 @@ export default function ProjectDetailsPage() {
     }
   };
 
-  const handleCollaborationSubmit = async (data: { about: string; collaboration: string }) => {
+  const handleCollaborationSubmit = async (data: any) => {
     try {
       if (!user?.email) {
         console.log('No user email found');
@@ -649,24 +564,13 @@ export default function ProjectDetailsPage() {
 
       setSubmittingCollaboration(true);
       
-      // Log the data being sent
-      console.log('Submitting collaboration request:', {
-        projectId: params.projectId,
-        email: user.email,
-        about: data.about,
-        collaboration: data.collaboration
-      });
-
       const response = await fetch(`/api/projects/${params.projectId}/collaborate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${user.email}`
         },
-        body: JSON.stringify({
-          about: data.about,
-          collaboration: data.collaboration
-        })
+        body: JSON.stringify(data)
       });
 
       const responseData = await response.json();
@@ -683,6 +587,12 @@ export default function ProjectDetailsPage() {
           type: 'success'
         });
         setShowCollaborationModal(false);
+        // Update the existing collaboration state
+        setExistingCollaboration({
+          status: responseData.data.status,
+          about: responseData.data.about || '',
+          collaboration: responseData.data.collaboration || ''
+        });
       } else {
         throw new Error(responseData.error || 'Failed to submit collaboration request');
       }
@@ -778,7 +688,7 @@ export default function ProjectDetailsPage() {
   }
  
   return (
-    <div className="min-h-screen bg-[#1a1a18]">
+    <div className="min-h-screen bg-[#1a1a18] text-[#f5efdb] pb-24">
       <div className="max-w-7xl mx-auto px-4 py-8 pb-32">
         {/* Project Header */}
         <div className="relative w-full h-[300px] rounded-xl overflow-hidden mb-8">
@@ -1123,11 +1033,21 @@ export default function ProjectDetailsPage() {
               className={`w-full sm:w-auto px-8 py-3 rounded-lg transition-all font-medium ${
                 project.collaboration.enabled && !existingCollaboration
                   ? 'bg-[#f5efdb] text-[#2a2a28] hover:opacity-90'
+                  : existingCollaboration?.status === 'approved'
+                  ? 'bg-green-500/20 text-green-400 cursor-not-allowed'
+                  : existingCollaboration?.status === 'rejected'
+                  ? 'bg-red-500/20 text-red-400 cursor-not-allowed'
+                  : existingCollaboration?.status === 'pending'
+                  ? 'bg-yellow-500/20 text-yellow-400 cursor-not-allowed'
                   : 'bg-[#f5efdb33] text-[#f5efdb66] cursor-not-allowed'
               }`}
             >
               {existingCollaboration 
-                ? `Request ${existingCollaboration.status.charAt(0).toUpperCase() + existingCollaboration.status.slice(1)}`
+                ? existingCollaboration.status === 'approved'
+                  ? 'Application Approved'
+                  : existingCollaboration.status === 'rejected'
+                  ? 'Application Rejected'
+                  : 'Application Pending'
                 : 'Collaborate Now'
               }
             </button>
@@ -1135,7 +1055,11 @@ export default function ProjectDetailsPage() {
               <div className="absolute bottom-full mb-2 w-48 p-2 bg-[#2a2a28] border border-[#f5efdb1a] rounded-lg text-[#f5efdb99] text-sm text-center
                 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                 {existingCollaboration
-                  ? `You have already submitted a collaboration request (${existingCollaboration.status})`
+                  ? existingCollaboration.status === 'approved'
+                    ? 'Your application has been approved!'
+                    : existingCollaboration.status === 'rejected'
+                    ? 'Your application has been rejected'
+                    : 'Your application is being reviewed'
                   : project.collaboration.disabledMessage
                 }
               </div>
@@ -1154,13 +1078,14 @@ export default function ProjectDetailsPage() {
         />
       )}
 
-      {/* Collaboration Modal */}
-      <CollaborationModal
-        isOpen={showCollaborationModal}
-        onClose={() => setShowCollaborationModal(false)}
-        onSubmit={handleCollaborationSubmit}
-        submitting={submittingCollaboration}
-      />
+      {/* Replace CollaborationModal with AmbassadorFormPopup */}
+      {showCollaborationModal && (
+        <AmbassadorFormPopup
+          onClose={() => setShowCollaborationModal(false)}
+          onSubmit={handleCollaborationSubmit}
+          uid={user?.email || ''}
+        />
+      )}
 
       {/* Toast Notification */}
       {toast && (

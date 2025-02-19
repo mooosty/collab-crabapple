@@ -6,6 +6,19 @@ export interface IUserCollaboration extends Document {
   status: 'pending' | 'approved' | 'rejected';
   about: string;
   collaboration: string;
+  details?: {
+    languages?: { [key: string]: boolean };
+    niches?: { [key: string]: boolean | string };
+    main_ecosystem?: { [key: string]: boolean };
+    audience_type?: { [key: string]: boolean | string };
+    main_socials?: {
+      [key: string]: {
+        handle: string;
+        audience_count: string;
+      };
+    };
+    description?: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,15 +42,50 @@ const UserCollaborationSchema: Schema = new Schema({
   },
   about: {
     type: String,
-    required: [true, 'About information is required'],
-    trim: true,
-    minlength: [1, 'About information cannot be empty']
+    required: false,
+    trim: true
   },
   collaboration: {
     type: String,
-    required: [true, 'Collaboration information is required'],
-    trim: true,
-    minlength: [1, 'Collaboration information cannot be empty']
+    required: false,
+    trim: true
+  },
+  details: {
+    type: {
+      languages: {
+        type: Map,
+        of: Boolean,
+        required: true
+      },
+      niches: {
+        type: Map,
+        of: Schema.Types.Mixed,
+        required: true
+      },
+      main_ecosystem: {
+        type: Map,
+        of: Boolean,
+        required: true
+      },
+      audience_type: {
+        type: Map,
+        of: Schema.Types.Mixed,
+        required: true
+      },
+      main_socials: {
+        type: Map,
+        of: new Schema({
+          handle: String,
+          audience_count: String
+        }, { _id: false }),
+        required: true
+      },
+      description: {
+        type: String,
+        required: true
+      }
+    },
+    required: true
   }
 }, {
   timestamps: true,
@@ -47,15 +95,6 @@ const UserCollaborationSchema: Schema = new Schema({
 
 // Create a compound index for userId and projectId
 UserCollaborationSchema.index({ userId: 1, projectId: 1 }, { unique: true });
-
-// Pre-save middleware to ensure required fields are present
-UserCollaborationSchema.pre('save', function(next) {
-  if (!this.about || !this.collaboration) {
-    next(new Error('About and collaboration fields are required'));
-  } else {
-    next();
-  }
-});
 
 // Clear existing models to prevent OverwriteModelError
 Object.keys(mongoose.models).forEach(key => {

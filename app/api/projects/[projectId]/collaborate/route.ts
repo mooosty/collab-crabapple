@@ -36,48 +36,29 @@ export async function POST(
     const body = await request.json();
     console.log('Raw request body:', JSON.stringify(body, null, 2));
     
-    const { about, collaboration } = body;
-    console.log('Extracted fields:', { about, collaboration });
+    const { details } = body;
+    console.log('Extracted fields:', { details });
     
     // Strict validation for required fields
-    if (!about || !collaboration) {
-      console.log('Missing required fields:', { about, collaboration });
+    if (!details || typeof details !== 'object') {
+      console.log('Missing or invalid details:', { details });
       return NextResponse.json({ 
         success: false,
-        error: 'Both about and collaboration fields are required',
-        receivedData: { about, collaboration }
+        error: 'Details object is required',
+        receivedData: { details }
       }, { status: 400 });
     }
 
-    if (typeof about !== 'string' || typeof collaboration !== 'string') {
-      console.log('Invalid field types:', {
-        aboutType: typeof about,
-        collaborationType: typeof collaboration,
-        about,
-        collaboration
-      });
+    // Validate required fields in details
+    const requiredFields = ['languages', 'niches', 'main_ecosystem', 'audience_type', 'main_socials', 'description'];
+    const missingFields = requiredFields.filter(field => !details[field]);
+    
+    if (missingFields.length > 0) {
+      console.log('Missing required fields in details:', missingFields);
       return NextResponse.json({ 
         success: false,
-        error: 'Both about and collaboration must be strings',
-        receivedTypes: { aboutType: typeof about, collaborationType: typeof collaboration }
-      }, { status: 400 });
-    }
-
-    const trimmedAbout = about.trim();
-    const trimmedCollaboration = collaboration.trim();
-    console.log('Trimmed values:', { trimmedAbout, trimmedCollaboration });
-
-    if (!trimmedAbout || !trimmedCollaboration) {
-      console.log('Empty fields after trim:', { 
-        aboutLength: trimmedAbout.length, 
-        collaborationLength: trimmedCollaboration.length,
-        trimmedAbout,
-        trimmedCollaboration
-      });
-      return NextResponse.json({ 
-        success: false,
-        error: 'Both about and collaboration information must not be empty',
-        receivedData: { trimmedAbout, trimmedCollaboration }
+        error: `Missing required fields in details: ${missingFields.join(', ')}`,
+        receivedData: { details }
       }, { status: 400 });
     }
 
@@ -128,8 +109,7 @@ export async function POST(
       userId: userEmail,
       projectId: params.projectId,
       status: 'pending',
-      about: trimmedAbout,
-      collaboration: trimmedCollaboration
+      details
     };
 
     console.log('Creating collaboration with data:', JSON.stringify(collaborationData, null, 2));
@@ -156,23 +136,10 @@ export async function POST(
 
       // Verify the saved data
       const verifiedCollaboration = await UserCollaboration.findById(savedCollaboration._id)
-        .select('userId projectId status about collaboration createdAt updatedAt')
+        .select('userId projectId status about collaboration details createdAt updatedAt')
         .lean();
         
       console.log('Verified saved collaboration:', JSON.stringify(verifiedCollaboration, null, 2));
-
-      if (!verifiedCollaboration?.about || !verifiedCollaboration?.collaboration) {
-        console.error('Required fields missing after save:', {
-          savedFields: Object.keys(verifiedCollaboration || {}),
-          about: verifiedCollaboration?.about,
-          collaboration: verifiedCollaboration?.collaboration
-        });
-        
-        // Delete the incomplete document
-        await UserCollaboration.findByIdAndDelete(savedCollaboration._id);
-        
-        throw new Error('Required fields missing after save');
-      }
 
       return NextResponse.json({ 
         success: true,
