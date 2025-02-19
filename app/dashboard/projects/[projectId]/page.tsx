@@ -83,15 +83,15 @@ interface TaskProgress {
   projectId: string;
   tasks: {
     taskId: string;
+    title: string;
+    description: string;
     type: 'discord' | 'social';
     status: 'pending' | 'pending_approval' | 'completed';
+    points: number;
+    dueDate: string;
+    priority: 'HIGH' | 'MEDIUM' | 'LOW';
     completedAt?: string;
     submission?: string;
-    subtasks?: {
-      subtaskId: string;
-      completed: boolean;
-      completedAt?: string;
-    }[];
   }[];
   totalPoints: number;
   completedTasks: number;
@@ -134,11 +134,13 @@ interface TaskSubmissionModalProps {
   isOpen: boolean;
   onClose: () => void;
   task: {
-    id: string;
+    taskId: string;
     title: string;
     type: 'discord' | 'social';
     points: number;
   };
+  taskProgress: TaskProgress;
+  onTaskSubmitted: (updatedProgress: TaskProgress) => void;
 }
 
 interface CollaborationModalProps {
@@ -152,6 +154,19 @@ interface ToastProps {
   message: string;
   type: 'success' | 'error';
   onClose: () => void;
+}
+
+interface TaskData {
+  projectId: string;
+  taskId: string;
+  title: string;
+  description: string;
+  status: 'pending' | 'pending_approval' | 'completed';
+  points: number;
+  dueDate: string;
+  priority: 'HIGH' | 'MEDIUM' | 'LOW';
+  completedAt?: string;
+  submission?: string;
 }
 
 const Toast = ({ message, type, onClose }: ToastProps) => {
@@ -187,7 +202,7 @@ const Toast = ({ message, type, onClose }: ToastProps) => {
   );
 };
 
-const TaskSubmissionModal = ({ isOpen, onClose, task, onTaskSubmitted }: TaskSubmissionModalProps & { onTaskSubmitted: (updatedProgress: TaskProgress) => void }) => {
+const TaskSubmissionModal = ({ isOpen, onClose, task, taskProgress, onTaskSubmitted }: TaskSubmissionModalProps) => {
   const [submission, setSubmission] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -200,16 +215,15 @@ const TaskSubmissionModal = ({ isOpen, onClose, task, onTaskSubmitted }: TaskSub
     setError(null);
     
     try {
-      const response = await fetch(`/api/projects/${params.projectId}/progress`, {
+      const response = await fetch(`/api/tasks/${task.taskId}/submit`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${user?.email}`
         },
         body: JSON.stringify({
-          taskId: task.id,
-          type: task.type,
-          submission: submission
+          link: submission,
+          description: task.type === 'discord' ? 'Discord username submission' : 'Social media post link'
         })
       });
 
@@ -219,7 +233,21 @@ const TaskSubmissionModal = ({ isOpen, onClose, task, onTaskSubmitted }: TaskSub
 
       const data = await response.json();
       if (data.success) {
-        onTaskSubmitted(data.data);
+        // Update task progress with the new data
+        const updatedTask = data.task;
+        const updatedProgress: TaskProgress = {
+          ...taskProgress,
+          tasks: taskProgress.tasks.map(t => 
+            t.taskId === task.taskId 
+              ? {
+                  ...t,
+                  status: 'pending_approval' as const,
+                  submission: updatedTask.submission
+                }
+              : t
+          )
+        };
+        onTaskSubmitted(updatedProgress);
         onClose();
       } else {
         throw new Error(data.error || 'Failed to submit task');
@@ -387,7 +415,7 @@ export default function ProjectDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<null | {
-    id: string;
+    taskId: string;
     title: string;
     type: 'discord' | 'social';
     points: number;
@@ -410,14 +438,14 @@ export default function ProjectDetailsPage() {
         setLoading(true);
         setError(null);
         
-        // Fetch project details and task progress in parallel
-        const [projectResponse, progressResponse, collaborationResponse] = await Promise.all([
+        // Fetch project details and tasks in parallel
+        const [projectResponse, tasksResponse, collaborationResponse] = await Promise.all([
           fetch(`/api/projects/${params.projectId}`, {
             headers: {
               'Authorization': `Bearer ${user.email}`
             }
           }),
-          fetch(`/api/projects/${params.projectId}/progress`, {
+          fetch(`/api/tasks`, {
             headers: {
               'Authorization': `Bearer ${user.email}`
             }
@@ -439,12 +467,21 @@ export default function ProjectDetailsPage() {
         if (projectData.success) {
           setProject(projectData.data);
           
-          if (progressResponse.ok) {
-            const progressData = await progressResponse.json();
-            console.log('Progress Data:', progressData);
+          if (tasksResponse.ok) {
+            const tasksData = await tasksResponse.json();
+            console.log('Tasks Data:', tasksData);
             
-            if (progressData.success) {
-              setTaskProgress(progressData.data);
+            if (tasksData.success) {
+              // Filter tasks for current project
+              const projectId = typeof params.projectId === 'string' ? params.projectId : params.projectId[0];
+              const projectTasks = tasksData.data.filter((task: TaskData) => task.projectId === projectId);
+              setTaskProgress({
+                userId: user.email,
+                projectId: projectId,
+                tasks: projectTasks,
+                totalPoints: projectTasks.reduce((sum: number, task: TaskData) => sum + (task.points || 0), 0),
+                completedTasks: projectTasks.filter((task: TaskData) => task.status === 'completed').length
+              });
             }
           }
 
@@ -471,13 +508,13 @@ export default function ProjectDetailsPage() {
   }, [user, params.projectId]);
 
   const handleTaskClick = (task: { 
-    id: string;
+    taskId: string;
     title: string; 
     type: 'discord' | 'social'; 
     points: number; 
   }) => {
     // Only allow clicking if task is in pending status
-    const taskStatus = getTaskStatus(task.id);
+    const taskStatus = getTaskStatus(task.taskId);
     if (taskStatus === 'pending') {
       setSelectedTask(task);
     }
@@ -487,12 +524,6 @@ export default function ProjectDetailsPage() {
     if (!taskProgress?.tasks) return 'pending';
     const task = taskProgress.tasks.find(t => t.taskId === taskId);
     return task?.status || 'pending';
-  };
-
-  const getSubtaskStatus = (taskId: string, subtaskId: string) => {
-    if (!taskProgress) return false;
-    const task = taskProgress.tasks?.find(t => t.taskId === taskId);
-    return task?.subtasks?.find(st => st.subtaskId === subtaskId)?.completed || false;
   };
 
   const getTaskStatusDisplay = (status: string) => {
@@ -696,7 +727,7 @@ export default function ProjectDetailsPage() {
                 {project.overview.description}
               </p>
             </div>
- 
+
             {/* NFT Details */}
             <div className="rounded-xl backdrop-blur-md bg-[#2a2a2833] border border-[#f5efdb1a] p-6">
               <h2 className="text-2xl font-display text-[#f5efdb] mb-4">{project.nftDetails.title}</h2>
@@ -709,7 +740,7 @@ export default function ProjectDetailsPage() {
                 ))}
               </ul>
             </div>
- 
+
             {/* How to Mint */}
             <div className="rounded-xl backdrop-blur-md bg-[#2a2a2833] border border-[#f5efdb1a] p-6">
               <h2 className="text-2xl font-display text-[#f5efdb] mb-4">How to Mint</h2>
@@ -731,6 +762,87 @@ export default function ProjectDetailsPage() {
                 </span>
               </div>
 
+              {/* Your Assigned Tasks */}
+              {taskProgress && (
+                <div className="mb-8">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-display text-[#f5efdb]">Your Assigned Tasks</h3>
+                    <div className="text-[#f5efdb99]">
+                      Total Points: {taskProgress.totalPoints || 0}
+                    </div>
+                  </div>
+
+                  {taskProgress.tasks && taskProgress.tasks.filter(task => task.title && task.description).length > 0 ? (
+                    <div className="space-y-4">
+                      {taskProgress.tasks
+                        .filter(task => task.title && task.description)
+                        .map((task) => (
+                          <div
+                            key={task.taskId}
+                            onClick={() => handleTaskClick({
+                              taskId: task.taskId,
+                              title: task.title,
+                              type: task.type,
+                              points: task.points
+                            })}
+                            className={`rounded-lg bg-[#2a2a2855] border border-[#f5efdb1a] p-4 ${
+                              task.status === 'pending' 
+                                ? 'cursor-pointer hover:bg-[#2a2a2877] transition-colors' 
+                                : 'cursor-not-allowed opacity-75'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-5 h-5 rounded-full border border-[#f5efdb33] flex items-center justify-center group relative">
+                                  {(() => {
+                                    const status = getTaskStatus(task.taskId);
+                                    const statusDisplay = getTaskStatusDisplay(status);
+                                    return (
+                                      <>
+                                        <div className={`rounded-full ${statusDisplay.color} ${statusDisplay.size}`}></div>
+                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-[#2a2a28] text-xs text-[#f5efdb] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                                          {statusDisplay.tooltip}
+                                          {status !== 'pending' && (
+                                            <div className="mt-1 text-[#f5efdb99]">
+                                              {status === 'pending_approval' ? 'Waiting for admin approval' : 'Task already completed'}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                                <div>
+                                  <h4 className="text-[#f5efdb] font-medium">{task.title}</h4>
+                                  <p className="text-[#f5efdb99] text-sm">{task.description}</p>
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end">
+                                <span className="text-yellow-400 text-sm">+{task.points} pts</span>
+                                <span className="text-[#f5efdb66] text-sm">{task.dueDate}</span>
+                                <span className={`text-sm ${
+                                  task.priority === 'HIGH' ? 'text-red-400' :
+                                  task.priority === 'MEDIUM' ? 'text-yellow-400' :
+                                  'text-green-400'
+                                }`}>
+                                  {task.priority}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-[#f5efdb99]">No tasks assigned yet.</p>
+                      <p className="text-[#f5efdb66] text-sm mt-2">
+                        Complete the collaboration request to start receiving tasks.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Discord Tasks */}
               <div className="space-y-4 mb-8">
                 <div className="flex items-center justify-between mb-2">
@@ -750,7 +862,7 @@ export default function ProjectDetailsPage() {
                         : 'cursor-not-allowed opacity-75'
                     }`}
                     onClick={() => handleTaskClick({
-                      id: task.id,
+                      taskId: task.id,
                       title: task.title,
                       type: 'discord',
                       points: task.points
@@ -780,28 +892,6 @@ export default function ProjectDetailsPage() {
                         <div>
                           <h4 className="text-[#f5efdb] font-medium">{task.title}</h4>
                           <p className="text-[#f5efdb99] text-sm">{task.description}</p>
-                          
-                          {task.subtasks && task.subtasks.length > 0 && (
-                            <div className="mt-2 space-y-1">
-                              {task.subtasks.map((subtask) => (
-                                <div key={subtask.id} className="flex items-center gap-2 text-sm">
-                                  <div className="w-3 h-3 rounded-full border border-[#f5efdb33] flex items-center justify-center">
-                                    {getSubtaskStatus(task.id, subtask.id) ? (
-                                      <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                                    ) : (
-                                      <div className="w-1 h-1 rounded-full bg-[#f5efdb33]"></div>
-                                    )}
-                                  </div>
-                                  <span className={`${getSubtaskStatus(task.id, subtask.id) ? 'text-[#f5efdb99] line-through' : 'text-[#f5efdb]'}`}>
-                                    {subtask.title}
-                                  </span>
-                                  {subtask.required && (
-                                    <span className="text-[#f5efdb66]">(Required)</span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
                         </div>
                       </div>
                       <div className="flex flex-col items-end">
@@ -832,7 +922,7 @@ export default function ProjectDetailsPage() {
                         : 'cursor-not-allowed opacity-75'
                     }`}
                     onClick={() => handleTaskClick({
-                      id: task.id,
+                      taskId: task.id,
                       title: task.title,
                       type: 'social',
                       points: task.points
@@ -966,11 +1056,12 @@ export default function ProjectDetailsPage() {
       </div>
  
       {/* Task Submission Modal */}
-      {selectedTask && (
+      {selectedTask && taskProgress && (
         <TaskSubmissionModal
           isOpen={!!selectedTask}
           onClose={() => setSelectedTask(null)}
           task={selectedTask}
+          taskProgress={taskProgress}
           onTaskSubmitted={handleTaskSubmitted}
         />
       )}

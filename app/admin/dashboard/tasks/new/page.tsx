@@ -6,7 +6,15 @@ import Link from 'next/link';
 
 interface Project {
   id: string;
-  title: string;
+  name: string;
+  overview: {
+    description: string;
+  };
+  coverImage: string;
+  status: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface User {
@@ -48,7 +56,7 @@ export default function NewTaskPage() {
     const fetchData = async () => {
       try {
         // Fetch projects
-        const projectsResponse = await fetch('/api/projects', {
+        const projectsResponse = await fetch('/api/admin/projects', {
           headers: {
             'Authorization': `Bearer admin@darknightlabs.com`
           }
@@ -98,7 +106,10 @@ export default function NewTaskPage() {
           'Authorization': `Bearer admin@darknightlabs.com`,
         },
         credentials: 'include',
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          userId: formData.assignedTo // Use the assignedTo email as userId
+        }),
       });
 
       const data = await response.json();
@@ -163,7 +174,7 @@ export default function NewTaskPage() {
                 <option value="">Select a project</option>
                 {projects.map(project => (
                   <option key={project.id} value={project.id}>
-                    {project.title}
+                    {project.name}
                   </option>
                 ))}
               </select>
