@@ -122,7 +122,6 @@
   font-size: 32px;
   color: #F5EFDB;
   font-weight: 500;
-  font-family: "MedievalSharp", cursive;
   text-align: center;
   margin-bottom: 2rem;
 }
@@ -146,9 +145,9 @@
 
 .section h3 {
   color: #F5EFDB;
-  font-family: "MedievalSharp", cursive;
   font-size: 24px;
   margin-bottom: 1.25rem;
+  font-weight: 500;
 }
 
 /* Options Container */
