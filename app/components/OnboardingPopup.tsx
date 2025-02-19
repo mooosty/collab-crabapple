@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useDynamicContext } from '@dynamic-labs/sdk-react-core';
+import { useRouter } from 'next/navigation';
 import styles from './OnboardingPopup.module.css';
 
 // Constants for predefined options
@@ -72,6 +73,7 @@ interface DynamicUser {
 }
 
 export default function OnboardingPopup({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
   const { user, isAuthenticated } = useDynamicContext() as { user: DynamicUser | null, isAuthenticated: boolean };
   
   const [formData, setFormData] = useState<FormData>({
@@ -248,9 +250,12 @@ export default function OnboardingPopup({ onClose }: { onClose: () => void }) {
       bio: formData.bio,
       short_bio: formData.short_bio,
       extensive_bio: formData.extensive_bio,
-      onboarding_completed: true,
+      onboarding_completed: true
     });
+
+    // Close the popup and redirect to dashboard
     onClose();
+    router.push('/dashboard');
   };
 
   const [customRole, setCustomRole] = useState('');

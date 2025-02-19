@@ -9,6 +9,14 @@ export interface ITask extends Document {
   status: string;
   userId: string;
   createdBy: string;
+  submission?: {
+    link: string;
+    description: string;
+    status: string;
+    submittedAt: Date | null;
+    feedback: string;
+    lastUpdated: Date | null;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -49,6 +57,24 @@ const TaskSchema: Schema = new Schema({
   createdBy: {
     type: String,
     required: [true, 'Creator ID is required']
+  },
+  submission: {
+    type: {
+      link: { type: String, default: '' },
+      description: { type: String, default: '' },
+      status: { type: String, default: 'pending' },
+      submittedAt: { type: Date, default: null },
+      feedback: { type: String, default: '' },
+      lastUpdated: { type: Date, default: null }
+    },
+    default: {
+      link: '',
+      description: '',
+      status: 'pending',
+      submittedAt: null,
+      feedback: '',
+      lastUpdated: null
+    }
   }
 }, {
   timestamps: true

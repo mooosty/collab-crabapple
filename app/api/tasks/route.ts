@@ -4,9 +4,6 @@ import Task, { ITask } from '@/src/models/Task';
 import Project from '@/src/models/Project';
 import User from '@/src/models/User';
 import TaskProgress from '@/src/models/TaskProgress';
-import { Document, Types } from 'mongoose';
-
-interface TaskDocument extends Document<Types.ObjectId, {}, ITask>, ITask {}
 
 export async function POST(request: NextRequest) {
   try {
@@ -109,36 +106,48 @@ export async function GET(request: NextRequest) {
     // Get all task progress entries for the user
     const taskProgressEntries = await TaskProgress.find({
       userId: userEmail
+    }).populate('projectId');
+
+    // Get all unique project IDs from task progress
+    const projectIds = Array.from(new Set(taskProgressEntries.map(entry => entry.projectId)));
+
+    // Get all projects to get their task details
+    const projects = await Project.find({
+      _id: { $in: projectIds }
     });
 
-    // Get all tasks assigned to the user
-    const tasks = await Task.find({
-      userId: userEmail
-    }).lean();
-
     // Transform task progress into the required format
-    const transformedTasks = tasks.map(task => {
-      // Find corresponding progress entry
-      const progressEntry = taskProgressEntries.find(progress => 
-        progress.tasks.some(t => t.taskId === task._id.toString())
-      );
+    const transformedTasks = taskProgressEntries.flatMap(progress => {
+      const project = projects.find(p => (p as any)._id.toString() === progress.projectId.toString());
+      if (!project) return [];
 
-      const taskProgress = progressEntry?.tasks.find(t => 
-        t.taskId === task._id.toString()
-      );
+      return progress.tasks.filter(task => 
+        task.status === 'pending_approval' || task.status === 'completed'
+      ).map(task => {
+        // Find the original task details from the project
+        const taskDetails = project.tasks?.discord?.tasks?.find(t => t.id === task.taskId) ||
+                          project.tasks?.social?.tasks?.find(t => t.id === task.taskId);
+        
+        if (!taskDetails) return null;
 
-      return {
-        taskId: task._id.toString(),
-        projectId: task.projectId,
-        title: task.title,
-        description: task.description,
-        status: taskProgress?.status || 'pending',
-        points: 10, // You might want to make this configurable
-        dueDate: task.deadline,
-        submission: taskProgress?.submission,
-        completedAt: taskProgress?.completedAt,
-        priority: task.priority
-      };
+        return {
+          taskId: task.taskId,
+          projectId: project._id,
+          projectName: project.name,
+          title: taskDetails.title,
+          description: taskDetails.description,
+          type: task.type,
+          status: task.status,
+          points: taskDetails.points,
+          dueDate: taskDetails.dueDate,
+          submission: task.submission ? {
+            link: task.submission,
+            description: 'View Submission'
+          } : undefined,
+          completedAt: task.completedAt,
+          subtasks: task.subtasks
+        };
+      }).filter(Boolean);
     });
 
     return NextResponse.json({ 

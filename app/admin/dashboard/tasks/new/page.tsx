@@ -108,7 +108,15 @@ export default function NewTaskPage() {
         credentials: 'include',
         body: JSON.stringify({
           ...formData,
-          userId: formData.assignedTo // Use the assignedTo email as userId
+          userId: formData.assignedTo,
+          submission: {
+            link: '',
+            description: '',
+            status: 'pending',
+            submittedAt: null,
+            feedback: '',
+            lastUpdated: null
+          }
         }),
       });
 

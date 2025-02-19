@@ -10,13 +10,19 @@ interface Task {
   projectName: string;
   title: string;
   description: string;
-  type: 'discord' | 'social';
-  status: 'pending' | 'pending_approval' | 'completed';
-  points: number;
-  dueDate: string;
+  type: 'discord' | 'social' | 'assigned';
+  status: 'pending' | 'pending_approval' | 'completed' | 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+  points?: number;
+  dueDate?: string;
+  deadline?: string;
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH';
   submission?: {
     link: string;
     description: string;
+    status?: string;
+    submittedAt?: string;
+    feedback?: string;
+    lastUpdated?: string;
   };
   completedAt?: string;
   subtasks?: {
@@ -42,22 +48,51 @@ export default function TasksPage() {
         setLoading(true);
         setError(null);
         
-        const response = await fetch('/api/tasks', {
-          headers: {
-            'Authorization': `Bearer ${user.email}`
-          }
-        });
+        // Fetch both regular tasks and assigned tasks in parallel
+        const [tasksResponse, assignedTasksResponse] = await Promise.all([
+          fetch('/api/tasks', {
+            headers: {
+              'Authorization': `Bearer ${user.email}`
+            }
+          }),
+          fetch('/api/tasks/assigned', {
+            headers: {
+              'Authorization': `Bearer ${user.email}`
+            }
+          })
+        ]);
 
-        if (!response.ok) {
+        if (!tasksResponse.ok || !assignedTasksResponse.ok) {
           throw new Error('Failed to fetch tasks');
         }
 
-        const data = await response.json();
-        if (data.success) {
-          setTasks(data.data);
-        } else {
-          throw new Error(data.error || 'Failed to fetch tasks');
-        }
+        const [tasksData, assignedTasksData] = await Promise.all([
+          tasksResponse.json(),
+          assignedTasksResponse.json()
+        ]);
+
+        // Transform assigned tasks to match the Task interface
+        const transformedAssignedTasks = (assignedTasksData.data || []).map((task: any) => ({
+          taskId: task.id,
+          projectId: task.projectId,
+          projectName: task.projectName,
+          title: task.title,
+          description: task.description,
+          type: 'assigned' as const,
+          status: task.status,
+          deadline: task.deadline,
+          priority: task.priority,
+          submission: task.submission,
+          completedAt: task.submission?.submittedAt
+        }));
+
+        // Combine both types of tasks
+        const allTasks = [
+          ...(tasksData.success ? tasksData.data : []),
+          ...transformedAssignedTasks
+        ];
+
+        setTasks(allTasks);
       } catch (err) {
         console.error('Error fetching tasks:', err);
         setError(err instanceof Error ? err.message : 'An error occurred');
@@ -70,14 +105,48 @@ export default function TasksPage() {
   }, [user]);
 
   const filteredTasks = tasks.filter(task => {
-    if (task.status === 'pending') return false;
-    
-    if (filter === 'all') return true;
-    return task.status === filter;
+    if (task.type === 'assigned') {
+      // For assigned tasks, show all except completed ones when filter is not 'completed'
+      if (filter === 'completed') return task.status === 'COMPLETED';
+      if (filter === 'pending_approval') return task.submission?.status === 'pending_approval';
+      return true;
+    } else {
+      // For regular tasks (discord/social)
+      if (task.status === 'pending') return false;
+      if (filter === 'all') return true;
+      return task.status === filter;
+    }
   });
 
-  const getStatusDisplay = (status: string) => {
-    switch (status) {
+  const getStatusDisplay = (task: Task) => {
+    if (task.type === 'assigned') {
+      switch (task.status) {
+        case 'COMPLETED':
+          return {
+            color: 'bg-green-500',
+            text: 'Completed',
+            textColor: 'text-green-500',
+            bgColor: 'bg-green-500/10'
+          };
+        case 'IN_PROGRESS':
+          return {
+            color: 'bg-blue-500',
+            text: 'In Progress',
+            textColor: 'text-blue-500',
+            bgColor: 'bg-blue-500/10'
+          };
+        default:
+          return {
+            color: 'bg-[#f5efdb33]',
+            text: 'Pending',
+            textColor: 'text-[#f5efdb66]',
+            bgColor: 'bg-[#f5efdb]/10'
+          };
+      }
+    }
+
+    // For regular tasks (discord/social)
+    switch (task.status) {
       case 'completed':
         return {
           color: 'bg-green-500',
@@ -194,7 +263,7 @@ export default function TasksPage() {
       {/* Tasks Grid */}
       <div className="grid gap-4">
         {filteredTasks.map((task) => {
-          const statusDisplay = getStatusDisplay(task.status);
+          const statusDisplay = getStatusDisplay(task);
           return (
             <div
               key={`${task.projectId}-${task.taskId}`}
@@ -210,6 +279,18 @@ export default function TasksPage() {
                   </Link>
                   <h3 className="text-lg font-medium text-[#f5efdb]">{task.title}</h3>
                   <p className="text-[#f5efdb99]">{task.description}</p>
+
+                  {task.type === 'assigned' && task.priority && (
+                    <div className="mt-2">
+                      <span className={`inline-block px-2 py-1 rounded text-xs ${
+                        task.priority === 'HIGH' ? 'bg-red-500/10 text-red-400' :
+                        task.priority === 'MEDIUM' ? 'bg-yellow-500/10 text-yellow-400' :
+                        'bg-green-500/10 text-green-400'
+                      }`}>
+                        {task.priority} Priority
+                      </span>
+                    </div>
+                  )}
 
                   {task.subtasks && task.subtasks.length > 0 && (
                     <div className="mt-4 space-y-2">
@@ -240,8 +321,12 @@ export default function TasksPage() {
                   <div className={`px-3 py-1 rounded-full text-sm ${statusDisplay.textColor} ${statusDisplay.bgColor}`}>
                     {statusDisplay.text}
                   </div>
-                  <div className="text-yellow-400">+{task.points} pts</div>
-                  <div className="text-[#f5efdb66] text-sm">{task.dueDate}</div>
+                  {task.points && (
+                    <div className="text-yellow-400">+{task.points} pts</div>
+                  )}
+                  <div className="text-[#f5efdb66] text-sm">
+                    {task.type === 'assigned' ? task.deadline : task.dueDate}
+                  </div>
                   {task.submission && (
                     <div className="text-[#f5efdb99] text-sm truncate max-w-[200px]">
                       <a 
@@ -250,7 +335,7 @@ export default function TasksPage() {
                         rel="noopener noreferrer"
                         className="text-[#f5efdb] hover:underline"
                       >
-                        {task.submission.description}
+                        {task.submission.description || 'View Submission'}
                       </a>
                     </div>
                   )}

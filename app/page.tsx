@@ -88,7 +88,7 @@ export default function Home() {
 
         {/* Auth Widget Container */}
         <div className="w-full max-w-md">
-          <div className="backdrop-blur-md bg-[#2a2a2833] border border-[#f5efdb1a] rounded-2xl p-6 md:p-8 shadow-2xl">
+          <div className="backdrop-blur-md bg-[#2a2a2833] border border-[#f5efdb1a] rounded-2xl p-6 md:p-8 shadow-2xl flex justify-center items-center">
             <DynamicWidget />
           </div>
         </div>
